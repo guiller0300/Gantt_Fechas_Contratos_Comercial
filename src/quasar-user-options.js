@@ -7,7 +7,7 @@ import { QBtn, QCard, QToolbar, QInput, QToolbarTitle, QCardSection, QIcon, QToo
         QLinearProgress, QCircularProgress, QTree, QSelect, QItemSection, QItem, QBadge, QAvatar, QItemLabel,
         QList, QBanner, QFabAction, QCardActions, QFab, QSlideTransition, QSpace, QBtnGroup,
         QDialog, QPage, QSpinner, QCheckbox, QTable, QTh, QTr, QTd, QBtnToggle, QTabPanels, QTabPanel, QTabs, QTab, QSeparator, Loading,
-        QSpinnerDots, QSpinnerGears, QBar
+        QSpinnerDots, QSpinnerGears, QBar, QPopupEdit, QDate, QToggle, QMenu
  } from 'quasar'
 
 // To be used on app.use(Quasar, { ... })
@@ -19,6 +19,6 @@ export default {
     QLinearProgress, QCircularProgress, QTree, QSelect, QItemSection, QItem, QBadge, QAvatar, QItemLabel,
     QList, QBanner, QFabAction, QCardActions, QFab, QSlideTransition, QSpace, QBtnGroup,
     QDialog, QPage, QSpinner, QCheckbox, QTable, QTh, QTr, QTd, QBtnToggle, QTabPanels, QTabPanel, QTabs, QTab, QSeparator,
-    QSpinnerDots, QSpinnerGears, QBar
+    QSpinnerDots, QSpinnerGears, QBar, QPopupEdit, QDate, QToggle, QMenu
    }
 }

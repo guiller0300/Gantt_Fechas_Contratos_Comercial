@@ -46,11 +46,31 @@ export const useGetConfiguracion = () => {
     })
 
     /* PERMISOS */
-    const permiso_contratos_editar = computed(() => {
+    // Solo Jorge Morales (y quien tenga el permiso) puede editar el Gantt; los demás leen.
+    const permiso_editar_gantt_contratos = computed(() => {
         try{
-            return javaObj.permiso_contratos_editar
+            return javaObj.permiso_editar_gantt_contratos
         }catch(e){
-            return false;
+            return true; // en dev sin javaObj, permitir edición para pruebas
+        }
+    })
+
+    // ATCs (asesores) cuyas filas puede EDITAR el usuario. Comercial se organiza por ATC.
+    //   ['*']           => todos los ATC (usar con atcs_gantt_excluir para "los demás").
+    //   [271, 235]      => solo esos ATC (ej. Claudia: Francisco López 271, Alberto García 235).
+    // Ej. Jorge => atcs_gantt_editar ['*'] + atcs_gantt_excluir [271,235] (todos menos los de Claudia).
+    const atcs_gantt_editar = computed(() => {
+        try{
+            return javaObj.atcs_gantt_editar
+        }catch(e){
+            return ['*']; // dev: todos
+        }
+    })
+    const atcs_gantt_excluir = computed(() => {
+        try{
+            return javaObj.atcs_gantt_excluir
+        }catch(e){
+            return [];
         }
     })
 
@@ -58,6 +78,8 @@ export const useGetConfiguracion = () => {
         usuario,
         departamento,
         baseUrlAxios,
-        permiso_contratos_editar
+        permiso_editar_gantt_contratos,
+        atcs_gantt_editar,
+        atcs_gantt_excluir
     }
 };

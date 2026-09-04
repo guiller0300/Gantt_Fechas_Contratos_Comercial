@@ -1,4 +1,5 @@
 import 'quasar/dist/quasar.sass'
+import '@turbomaquinas/vue-gantt/style.css'
 import axios from "axios";
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
