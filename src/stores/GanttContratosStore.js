@@ -31,9 +31,13 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
     const permitido = editar.includes("*") || editar.includes(atcId);
     return permitido && !excluir.includes(atcId);
   };
-  // Marca cada fila con _editable según su ATC y el permiso del usuario.
+  const fmtMoneda = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
+
+  // Marca cada fila con _editable (según ATC/permiso) y formatea el monto del pedido.
   const anotarEditable = (r) => {
     r._editable = puedeEditarAtc(r.atc_id);
+    r.pedido_monto_fmt =
+      r.pedido_monto != null && r.pedido_monto !== "" ? fmtMoneda.format(Number(r.pedido_monto)) : null;
     return r;
   };
 
@@ -206,21 +210,36 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
       }
     };
 
+    // OT a nivel proyección (fallback cuando el pedido no trae la suya).
+    const otProyId = (cand) => ((cand.ordenes || []).length === 1 ? cand.ordenes[0].id : null);
+    const otProyTexto = (cand) => (cand.ordenes || []).map((o) => o.numero_orden).join(", ") || null;
+
     for (const cand of seleccion) {
       const pedidos = cand.pedidos || [];
       if (modo === "pedido" && pedidos.length) {
-        // Una fila por cada pedido (contrato), con su OT.
+        // Una fila por cada pedido (contrato). OT del propio pedido si la tiene;
+        // si no (ORDENES_id 0/null), hereda la OT ligada a la proyección.
         for (const p of pedidos) {
+          const tieneOtPropia = p.ordenes_id && Number(p.ordenes_id) > 0;
+          const ordenes_id = tieneOtPropia ? p.ordenes_id : otProyId(cand);
+          const ot_numero = tieneOtPropia ? p.orden_numero : otProyTexto(cand);
           await post(
-            { ...base(cand), pedidos_id: p.id, ordenes_id: p.ordenes_id || null, ot_numero: p.orden_numero || null },
+            {
+              ...base(cand),
+              pedidos_id: p.id,
+              ordenes_id: ordenes_id || null,
+              ot_numero: ot_numero || null,
+              // Fechas mandatorias del pedido (fallo se deja tentativo/manual).
+              firma_contrato: p.firma_contrato || null,
+              comienzo: p.inicio_contrato || null,
+              fin: p.fin_contrato || null,
+            },
             `${cand.cliente} / pedido ${p.numero}`
           );
         }
       } else {
         // Por proyección: una sola fila con las OTs del proyecto.
-        const unaOrden = (cand.ordenes || []).length === 1 ? cand.ordenes[0].id : null;
-        const otTexto = (cand.ordenes || []).map((o) => o.numero_orden).join(", ") || null;
-        await post({ ...base(cand), ordenes_id: unaOrden, ot_numero: otTexto }, cand.cliente);
+        await post({ ...base(cand), ordenes_id: otProyId(cand), ot_numero: otProyTexto(cand) }, cand.cliente);
       }
     }
     if (ok > 0) {

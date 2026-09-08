@@ -113,7 +113,8 @@ watch(otsAdicionales, (on) => {
 });
 
 function toggle(row) {
-  if (row.ya_importado) return;
+  // Las filas "Ya está" también pueden reimportarse: el backend reactiva y refresca su OT
+  // sin duplicar (dedup por pedido/proyección). Útil para reparar OTs que faltaban.
   const s = new Set(seleccion.value);
   const k = keyOf(row);
   s.has(k) ? s.delete(k) : s.add(k);
@@ -230,7 +231,6 @@ async function importar() {
                 <q-checkbox
                   v-if="fuente === 'proyecciones'"
                   :model-value="seleccion.has(keyOf(props.row))"
-                  :disable="props.row.ya_importado"
                   @update:model-value="toggle(props.row)"
                   dense class="q-mr-sm"
                 />

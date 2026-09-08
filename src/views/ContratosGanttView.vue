@@ -25,7 +25,7 @@ const {
 const puedeEditar = computed(() => permiso_editar_gantt_contratos.value);
 const editando = ref(false);
 const dialogImportar = ref(false);
-const mostrarInfo = ref(false); // muestra columnas informativas Fallo/Firma
+const mostrarInfo = ref(false); // muestra el detalle: Fallo (tentativo), Firma y Monto
 
 const opcionesTipo = ["SERVICIOS", "BIENES", "GARANTIA"];
 const opcionesCategoria = [
@@ -47,11 +47,19 @@ const columnas = computed(() => {
     { field: "proyecto_folio", label: "No. Proyecto", width: 100, type: "texto", align: "center", readonly: true, emptyLabel: "—" },
     { field: "pedido_numero", label: "No. Contrato", width: 110, type: "texto", align: "center", readonly: true, emptyLabel: "—" },
   ];
-  const info = [
-    { field: "fallo", label: "Fallo", width: 100, type: "fecha", emptyLabel: "Pendiente" },
-    { field: "firma_contrato", label: "Firma Contrato", width: 116, type: "texto" },
-  ];
-  const resto = [
+  // Bloque de detalle (oculto tras el toggle): Fallo (tentativo), Firma y Monto.
+  // Monto solo para comercial (con permiso), como el activar/desactivar filas.
+  const detalle = mostrarInfo.value
+    ? [
+        { field: "fallo", label: "Fallo", width: 100, type: "fecha", emptyLabel: "Pendiente" },
+        { field: "firma_contrato", label: "Firma Contrato", width: 110, type: "fecha", emptyLabel: "—" },
+        ...(puedeEditar.value
+          ? [{ field: "pedido_monto_fmt", label: "Monto", width: 116, type: "texto", align: "right", readonly: true, emptyLabel: "—" }]
+          : []),
+      ]
+    : [];
+  // Siempre visibles: OT + fechas mandatorias del contrato/pedido.
+  const centro = [
     { field: "ot_numero", label: "OT", width: 84, type: "texto", align: "center", readonly: true },
     { field: "comienzo", label: "Comienzo", width: 96, type: "fecha" },
     { field: "fin", label: "Fin", width: 96, type: "fecha" },
@@ -63,7 +71,7 @@ const columnas = computed(() => {
          icon: "check_circle_outline", color: "green-7",
          tooltip: "Marcar terminado / quitar del Gantt (se reactiva si lo reimportas)" }]
     : [];
-  return [...base, ...(mostrarInfo.value ? info : []), ...resto, ...acciones];
+  return [...base, ...detalle, ...centro, ...acciones];
 });
 
 // El padre es la fuente de verdad: aplica y persiste los cambios del Gantt.
@@ -172,8 +180,8 @@ onMounted(async () => {
           </q-btn>
         </div>
         <div class="col-auto">
-          <q-toggle v-model="mostrarInfo" icon="info" color="blue-grey-6" label="Fallo/Firma" left-label dense>
-            <q-tooltip>Mostrar u ocultar las columnas Fallo y Firma de contrato</q-tooltip>
+          <q-toggle v-model="mostrarInfo" icon="info" color="blue-grey-6" label="Detalle" left-label dense>
+            <q-tooltip>Mostrar u ocultar Fallo, Firma de contrato y Monto</q-tooltip>
           </q-toggle>
         </div>
 
@@ -234,6 +242,7 @@ onMounted(async () => {
         category-field="categoria"
         :editable="editando"
         editable-field="_editable"
+        persist-widths-key="contratos"
         :day-width="6"
         @update:row="onUpdateRow"
         @tramo-add="onTramoAdd"
