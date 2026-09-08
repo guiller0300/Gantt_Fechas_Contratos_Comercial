@@ -15,14 +15,15 @@ const store = useGanttContratosStore();
 const {
   filasFiltradas, loading, total, aniosDisponibles, conteoPorCategoria,
   filtroAnio, filtroTipo, filtroCategoria, filtroAtc, atcsDisponibles,
+  fechaReporte, esSnapshot,
 } = storeToRefs(store);
 const {
-  consultarAnios, consultarGantt, actualizarFila, eliminarFila,
+  consultarAnios, consultarGantt, refrescarTablero, actualizarFila, eliminarFila,
   agregarTramo, actualizarTramo, eliminarTramo, limpiarFiltros,
 } = store;
 
-// Modo edición: solo disponible si el usuario tiene permiso (Jorge). Arranca en lectura.
-const puedeEditar = computed(() => permiso_editar_gantt_contratos.value);
+// Modo edición: solo con permiso (Jorge) Y en el Gantt vivo (nunca sobre un snapshot histórico).
+const puedeEditar = computed(() => permiso_editar_gantt_contratos.value && !esSnapshot.value);
 const editando = ref(false);
 const dialogImportar = ref(false);
 const mostrarInfo = ref(false); // muestra el detalle: Fallo (tentativo), Firma y Monto
@@ -101,8 +102,22 @@ async function onRowRemove(row) {
 }
 
 const refrescar = async () => {
-  await consultarGantt(filtroAnio.value);
+  await refrescarTablero();
 };
+
+// Cambio de la fecha del reporte: al fijarla se ve el snapshot (solo lectura); al limpiarla, el vivo.
+function onFechaReporte(val) {
+  fechaReporte.value = val || null;
+  if (esSnapshot.value) editando.value = false;
+  refrescarTablero();
+}
+
+// Formatea la fecha del snapshot para el aviso (DD/MM/YYYY).
+const fechaReporteDMY = computed(() => {
+  if (!fechaReporte.value) return "";
+  const [y, m, d] = String(fechaReporte.value).split("-");
+  return d && m && y ? `${d}/${m}/${y}` : fechaReporte.value;
+});
 
 onMounted(async () => {
   $q.loading.show({
@@ -144,6 +159,34 @@ onMounted(async () => {
           >
             <template v-slot:prepend><q-icon name="calendar_month" size="xs" /></template>
           </q-select>
+        </div>
+        <div class="col-auto">
+          <q-input
+            :model-value="fechaReporte"
+            @update:model-value="onFechaReporte"
+            label="Fecha del reporte" outlined dense clearable
+            mask="####-##-##" placeholder="AAAA-MM-DD"
+            style="min-width: 180px"
+            :bg-color="esSnapshot ? 'amber-1' : undefined"
+          >
+            <template v-slot:prepend><q-icon name="history" size="xs" /></template>
+            <template v-slot:append>
+              <q-icon name="event" class="cursor-pointer">
+                <q-popup-proxy cover transition-show="scale" transition-hide="scale">
+                  <q-date
+                    :model-value="fechaReporte"
+                    @update:model-value="onFechaReporte"
+                    mask="YYYY-MM-DD" today-btn
+                  >
+                    <div class="row items-center justify-end">
+                      <q-btn v-close-popup label="Cerrar" color="primary" flat />
+                    </div>
+                  </q-date>
+                </q-popup-proxy>
+              </q-icon>
+            </template>
+            <q-tooltip>Elige una fecha para ver el Gantt como estaba ese día (solo lectura)</q-tooltip>
+          </q-input>
         </div>
         <div class="col-auto">
           <q-select
@@ -226,6 +269,14 @@ onMounted(async () => {
       </div>
     </q-card-section>
 
+    <!-- Aviso de snapshot (solo lectura) -->
+    <div v-if="esSnapshot" class="snapshot-banner">
+      <q-icon name="history" size="18px" class="q-mr-xs" />
+      <span>Viendo el Gantt como estaba al <b>{{ fechaReporteDMY }}</b> — solo lectura.</span>
+      <q-space />
+      <q-btn flat dense no-caps size="sm" icon="close" label="Volver al vivo" @click="onFechaReporte(null)" />
+    </div>
+
     <!-- Gantt -->
     <div class="gantt-content q-px-md q-pb-md">
       <div v-if="!loading && total === 0" class="empty-state">
@@ -273,6 +324,18 @@ onMounted(async () => {
 .gantt-content > :deep(.tmq-gantt) {
   flex: 1;
   min-height: 0;
+}
+.snapshot-banner {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 16px 8px;
+  padding: 6px 12px;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 6px;
+  color: #8a6d00;
+  font-size: 13px;
 }
 .leyenda { flex-wrap: wrap; }
 .chip-leyenda {

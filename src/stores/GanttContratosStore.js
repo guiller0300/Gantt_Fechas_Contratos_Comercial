@@ -22,6 +22,10 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
   const filtroCategoria = ref(null); // CONTRATADO | PROYECCION | GARANTIA
   const filtroAtc = ref(null); // atc_id
 
+  // Reporte por fecha (snapshot). null = Gantt vivo; con fecha = solo lectura.
+  const fechaReporte = ref(null);
+  const esSnapshot = computed(() => !!fechaReporte.value);
+
   const numeroUsuario = () => usuario.value?.numero ?? null;
 
   // ¿El usuario puede editar filas de este ATC? Soporta '*' (todos) + exclusiones.
@@ -77,6 +81,29 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
     } finally {
       loading.value = false;
     }
+  };
+
+  /** Snapshot del año a una fecha (solo lectura): el tablero como estaba ese día. */
+  const consultarAsOf = async (fecha) => {
+    loading.value = true;
+    error.value = null;
+    try {
+      const { data } = await axios.get(`${BASE}/anio/${filtroAnio.value}/asof/${fecha}`);
+      filas.value = (Array.isArray(data) ? data : []).map(anotarEditable);
+      return { success: true, data: filas.value };
+    } catch (e) {
+      console.error("Error al consultar snapshot:", e);
+      error.value = "No se pudo cargar el snapshot de esa fecha";
+      showNotification(error.value, "negative", "top-right", "error", 3000);
+      return { success: false, message: error.value };
+    } finally {
+      loading.value = false;
+    }
+  };
+
+  /** Carga el tablero según el modo: snapshot si hay fechaReporte, si no el vivo. */
+  const refrescarTablero = async () => {
+    return fechaReporte.value ? consultarAsOf(fechaReporte.value) : consultarGantt(filtroAnio.value);
   };
 
   // ==================== EDICIÓN DE FILAS ====================
@@ -346,6 +373,8 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
     filtroTipo,
     filtroCategoria,
     filtroAtc,
+    fechaReporte,
+    esSnapshot,
     // computados
     filasFiltradas,
     atcsDisponibles,
@@ -364,6 +393,8 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
     // acciones
     consultarAnios,
     consultarGantt,
+    consultarAsOf,
+    refrescarTablero,
     actualizarFila,
     eliminarFila,
     agregarTramo,
