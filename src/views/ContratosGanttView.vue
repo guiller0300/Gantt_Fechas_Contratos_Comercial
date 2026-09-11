@@ -14,7 +14,7 @@ const { permiso_editar_gantt_contratos } = useGetConfiguracion();
 const store = useGanttContratosStore();
 const {
   filasFiltradas, loading, conteoPorCategoria,
-  filtroTipo, filtroCategoria, filtroAtc, atcsDisponibles,
+  filtroCategoria, filtroAtc, atcsDisponibles,
   fechaReporte, esSnapshot,
 } = storeToRefs(store);
 const {
@@ -44,17 +44,33 @@ const bandDef = {
   label: "Ventana de cobro (30–45 días)",
 };
 
-const opcionesTipo = ["SERVICIOS", "BIENES", "GARANTIA"];
 const opcionesCategoria = [
   { label: "Contratado", value: "CONTRATADO" },
   { label: "Proyección", value: "PROYECCION" },
   { label: "Garantía", value: "GARANTIA" },
 ];
 
+// Calles (grupo) del Gantt. El grupo es la clasificación; se arrastra la fila a la que corresponda.
 const gruposDef = [
-  { key: "Taller y servicio campo", label: "Taller y servicio campo" },
   { key: "Bienes", label: "Bienes" },
+  { key: "Servicios", label: "Servicios" },
+  { key: "Bienes y servicios", label: "Bienes y servicios" },
 ];
+
+// tipo derivado del grupo (se sincroniza al reclasificar, cuando aplica).
+function tipoDeGrupo(grupo) {
+  if (grupo === "Bienes") return "BIENES";
+  if (grupo === "Servicios") return "SERVICIOS";
+  return null; // 'Bienes y servicios': no forzar un único tipo
+}
+
+// Drag&drop entre calles: persiste el nuevo grupo (+ tipo cuando aplica).
+function onRowGroupChange(row, nuevoGrupo) {
+  const cambios = { grupo: nuevoGrupo };
+  const t = tipoDeGrupo(nuevoGrupo);
+  if (t) cambios.tipo = t;
+  actualizarFila(row.id, cambios);
+}
 
 // Columnas del Gantt (Tipo se omite: ya está implícito en el grupo)
 // Columnas informativas (Fallo/Firma) que se muestran/ocultan con el toggle.
@@ -200,15 +216,6 @@ onMounted(async () => {
         </div>
         <div class="col-auto">
           <q-select
-            v-model="filtroTipo"
-            :options="opcionesTipo"
-            label="Tipo" outlined dense clearable style="min-width: 150px"
-          >
-            <template v-slot:prepend><q-icon name="category" size="xs" /></template>
-          </q-select>
-        </div>
-        <div class="col-auto">
-          <q-select
             v-model="filtroCategoria"
             :options="opcionesCategoria"
             emit-value map-options
@@ -311,9 +318,11 @@ onMounted(async () => {
         :band="mostrarHitos ? bandDef : null"
         :editable="editando"
         editable-field="_editable"
+        :row-draggable="editando"
         persist-widths-key="contratos"
         :day-width="6"
         @update:row="onUpdateRow"
+        @row-group-change="onRowGroupChange"
         @tramo-add="onTramoAdd"
         @tramo-change="onTramoChange"
         @tramo-remove="onTramoRemove"

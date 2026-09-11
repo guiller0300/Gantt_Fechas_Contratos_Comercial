@@ -14,14 +14,14 @@ const { importables, loadingImport, ordenesEncontradas, loadingOrdenes, filtroAn
 const { consultarImportables, importarProyecciones, buscarOrdenes, agregarOrdenes } = store;
 
 const busqueda = ref("");
-const grupo = ref("Taller y servicio campo");
+const grupo = ref("Servicios");
 const modo = ref("pedido"); // 'pedido' | 'proyecto' (solo para proyecciones)
 const otsAdicionales = ref(false); // check: buscar en el catálogo completo de OTs
 const filtroAnioOt = ref(null); // filtro de año dentro del catálogo de OTs (null = todos)
 const seleccion = ref(new Set());
 const agregando = ref(false);
 
-const opcionesGrupo = ["Taller y servicio campo", "Bienes"];
+const opcionesGrupo = ["Bienes", "Servicios", "Bienes y servicios"];
 const opcionesModo = [
   { label: "Por proyecto", value: "proyecto" },
   { label: "Por pedido", value: "pedido" },

@@ -192,8 +192,9 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
   const loadingImport = ref(false);
 
   const GRUPO_TIPO = {
-    "Taller y servicio campo": "SERVICIOS",
     Bienes: "BIENES",
+    Servicios: "SERVICIOS",
+    "Bienes y servicios": "SERVICIOS", // por defecto; el grupo manda, tipo es secundario
   };
 
   /** Candidatos de proyección para el año (con sus OTs ligadas). */
