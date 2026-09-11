@@ -19,7 +19,7 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
 
   // Filtros
   const filtroAnio = ref(null);
-  const filtroTipo = ref(null); // SERVICIOS | BIENES | GARANTIA
+  const filtroGrupo = ref(null); // Bienes | Servicios | Bienes y servicios (la calle)
   const filtroCategoria = ref(null); // CONTRATADO | PROYECCION | GARANTIA
   const filtroAtc = ref(null); // atc_id
 
@@ -191,12 +191,6 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
   const importables = ref([]);
   const loadingImport = ref(false);
 
-  const GRUPO_TIPO = {
-    Bienes: "BIENES",
-    Servicios: "SERVICIOS",
-    "Bienes y servicios": "SERVICIOS", // por defecto; el grupo manda, tipo es secundario
-  };
-
   /** Candidatos de proyección para el año (con sus OTs ligadas). */
   const consultarImportables = async (cliente = "") => {
     loadingImport.value = true;
@@ -226,7 +220,6 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
       grupo,
       clientes_unidad_id: cand.clientes_unidad_id,
       proyecciones_proyectos_id: cand.proyecciones_proyectos_id,
-      tipo: GRUPO_TIPO[grupo] || "SERVICIOS",
       categoria: cand.ganado_tmq === 1 ? "CONTRATADO" : "PROYECCION",
       orden_visual: 0,
       creado_por: numeroUsuario(),
@@ -311,7 +304,6 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
         etiqueta_manual: o.cliente,
         ordenes_id: o.ordenes_id,
         ot_numero: o.numero_orden,
-        tipo: GRUPO_TIPO[grupo] || "SERVICIOS",
         categoria: "CONTRATADO",
         orden_visual: 0,
         creado_por: numeroUsuario(),
@@ -334,7 +326,7 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
 
   const filasFiltradas = computed(() =>
     filas.value.filter((f) => {
-      if (filtroTipo.value && f.tipo !== filtroTipo.value) return false;
+      if (filtroGrupo.value && f.grupo !== filtroGrupo.value) return false;
       if (filtroCategoria.value && f.categoria !== filtroCategoria.value) return false;
       if (filtroAtc.value && f.atc_id !== filtroAtc.value) return false;
       return true;
@@ -361,7 +353,7 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
   });
 
   const limpiarFiltros = () => {
-    filtroTipo.value = null;
+    filtroGrupo.value = null;
     filtroCategoria.value = null;
     filtroAtc.value = null;
   };
@@ -373,7 +365,7 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
     loading,
     error,
     filtroAnio,
-    filtroTipo,
+    filtroGrupo,
     filtroCategoria,
     filtroAtc,
     fechaReporte,

@@ -14,7 +14,7 @@ const { permiso_editar_gantt_contratos } = useGetConfiguracion();
 const store = useGanttContratosStore();
 const {
   filasFiltradas, loading, conteoPorCategoria,
-  filtroCategoria, filtroAtc, atcsDisponibles,
+  filtroGrupo, filtroCategoria, filtroAtc, atcsDisponibles,
   fechaReporte, esSnapshot,
 } = storeToRefs(store);
 const {
@@ -56,20 +56,11 @@ const gruposDef = [
   { key: "Servicios", label: "Servicios" },
   { key: "Bienes y servicios", label: "Bienes y servicios" },
 ];
+const opcionesGrupo = gruposDef.map((g) => g.key);
 
-// tipo derivado del grupo (se sincroniza al reclasificar, cuando aplica).
-function tipoDeGrupo(grupo) {
-  if (grupo === "Bienes") return "BIENES";
-  if (grupo === "Servicios") return "SERVICIOS";
-  return null; // 'Bienes y servicios': no forzar un único tipo
-}
-
-// Drag&drop entre calles: persiste el nuevo grupo (+ tipo cuando aplica).
+// Drag&drop entre calles: persiste el nuevo grupo. La clasificación es el grupo (sin 'tipo').
 function onRowGroupChange(row, nuevoGrupo) {
-  const cambios = { grupo: nuevoGrupo };
-  const t = tipoDeGrupo(nuevoGrupo);
-  if (t) cambios.tipo = t;
-  actualizarFila(row.id, cambios);
+  actualizarFila(row.id, { grupo: nuevoGrupo });
 }
 
 // Columnas del Gantt (Tipo se omite: ya está implícito en el grupo)
@@ -216,6 +207,15 @@ onMounted(async () => {
         </div>
         <div class="col-auto">
           <q-select
+            v-model="filtroGrupo"
+            :options="opcionesGrupo"
+            label="Grupo" outlined dense clearable style="min-width: 170px"
+          >
+            <template v-slot:prepend><q-icon name="view_stream" size="xs" /></template>
+          </q-select>
+        </div>
+        <div class="col-auto">
+          <q-select
             v-model="filtroCategoria"
             :options="opcionesCategoria"
             emit-value map-options
@@ -337,7 +337,7 @@ onMounted(async () => {
 
 <style scoped>
 .gantt-container {
-  height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
