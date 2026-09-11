@@ -5,7 +5,8 @@ import { useGetNotify } from "@/composables/getNotify";
 import { useGetConfiguracion } from "@/composables/getConfiguracion";
 
 const { showNotification } = useGetNotify();
-const { usuario, atcs_gantt_editar, atcs_gantt_excluir } = useGetConfiguracion();
+const { usuario, permiso_editar_gantt_cfe, permiso_editar_gantt_pemex, permiso_editar_gantt_varios } =
+  useGetConfiguracion();
 
 const BASE = "/comercial/proyectos-gantt";
 
@@ -28,18 +29,19 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
 
   const numeroUsuario = () => usuario.value?.numero ?? null;
 
-  // ¿El usuario puede editar filas de este ATC? Soporta '*' (todos) + exclusiones.
-  const puedeEditarAtc = (atcId) => {
-    const editar = atcs_gantt_editar.value || [];
-    const excluir = atcs_gantt_excluir.value || [];
-    const permitido = editar.includes("*") || editar.includes(atcId);
-    return permitido && !excluir.includes(atcId);
+  // ¿El usuario puede editar filas de este grupo comercial? Cada grupo tiene su permiso
+  // (booleano, de un rol de Keycloak). Sin grupo => se trata como Varios/OTROS.
+  const puedeEditarGrupo = (grupo) => {
+    const g = grupo || "OTROS";
+    if (g === "CFE") return permiso_editar_gantt_cfe.value;
+    if (g === "PEMEX") return permiso_editar_gantt_pemex.value;
+    return permiso_editar_gantt_varios.value; // OTROS = Varios
   };
   const fmtMoneda = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" });
 
-  // Marca cada fila con _editable (según ATC/permiso) y formatea el monto del pedido.
+  // Marca cada fila con _editable (según su grupo comercial) y formatea el monto del pedido.
   const anotarEditable = (r) => {
-    r._editable = puedeEditarAtc(r.atc_id);
+    r._editable = puedeEditarGrupo(r.grupo_comercial);
     r.pedido_monto_fmt =
       r.pedido_monto != null && r.pedido_monto !== "" ? fmtMoneda.format(Number(r.pedido_monto)) : null;
     return r;

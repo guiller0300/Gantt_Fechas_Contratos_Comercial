@@ -13,8 +13,8 @@ const { permiso_editar_gantt_contratos } = useGetConfiguracion();
 
 const store = useGanttContratosStore();
 const {
-  filasFiltradas, loading, total, aniosDisponibles, conteoPorCategoria,
-  filtroAnio, filtroTipo, filtroCategoria, filtroAtc, atcsDisponibles,
+  filasFiltradas, loading, conteoPorCategoria,
+  filtroTipo, filtroCategoria, filtroAtc, atcsDisponibles,
   fechaReporte, esSnapshot,
 } = storeToRefs(store);
 const {
@@ -101,10 +101,6 @@ async function onRowRemove(row) {
   if (r.isConfirmed) await eliminarFila(row.id);
 }
 
-const refrescar = async () => {
-  await refrescarTablero();
-};
-
 // Cambio de la fecha del reporte: al fijarla se ve el snapshot (solo lectura); al limpiarla, el vivo.
 function onFechaReporte(val) {
   fechaReporte.value = val || null;
@@ -142,24 +138,11 @@ onMounted(async () => {
       <q-toolbar-title>
         <span class="text-weight-bold">Gantt de Fechas de Contratos</span>
       </q-toolbar-title>
-      <q-badge color="light-blue-1" class="q-ml-md text-black text-bold text-subtitle1 q-pa-sm">
-        {{ total }} filas
-      </q-badge>
     </q-toolbar>
 
     <!-- Barra de filtros -->
     <q-card-section class="q-py-sm">
       <div class="row q-col-gutter-sm items-center">
-        <div class="col-auto">
-          <q-select
-            v-model="filtroAnio"
-            :options="aniosDisponibles"
-            label="Año" outlined dense style="min-width: 110px"
-            @update:model-value="refrescar"
-          >
-            <template v-slot:prepend><q-icon name="calendar_month" size="xs" /></template>
-          </q-select>
-        </div>
         <div class="col-auto">
           <q-input
             :model-value="fechaReporte"

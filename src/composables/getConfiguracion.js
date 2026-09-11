@@ -37,49 +37,43 @@ export const useGetConfiguracion = () => {
         }catch(e){
             return {
                 "id" : 5,
-                "clave" : 'COM',
-                "clave_depto_principal" : 'COM',
+                "clave" : 'CO',
+                "clave_depto_principal" : 'CO',
                 "depto_principal_id": 5,
                 "descripcion": "COMERCIAL",
             }
         }
     })
 
-    /* PERMISOS */
-    // Solo Jorge Morales (y quien tenga el permiso) puede editar el Gantt; los demás leen.
-    const permiso_editar_gantt_contratos = computed(() => {
-        try{
-            return javaObj.permiso_editar_gantt_contratos
-        }catch(e){
-            return true; // en dev sin javaObj, permitir edición para pruebas
-        }
+    /* PERMISOS (3 permisos, uno por grupo comercial, vía roles de Keycloak) */
+    // Cada permiso es un booleano (sí/no) que corresponde a un rol de Keycloak:
+    //   permiso_editar_gantt_cfe    <- ro_co_gantt_editar_cfe
+    //   permiso_editar_gantt_pemex  <- ro_co_gantt_editar_pemex
+    //   permiso_editar_gantt_varios <- ro_co_gantt_editar_varios
+    // El frontend host los resuelve del token y los inyecta en javaObj. Una fila es editable
+    // según su grupo_comercial (CFE / PEMEX / OTROS=Varios), que deriva el backend.
+    const permiso_editar_gantt_cfe = computed(() => {
+        try{ return !!javaObj.permiso_editar_gantt_cfe }catch(e){ return true; } // dev: permitido
+    })
+    const permiso_editar_gantt_pemex = computed(() => {
+        try{ return !!javaObj.permiso_editar_gantt_pemex }catch(e){ return true; }
+    })
+    const permiso_editar_gantt_varios = computed(() => {
+        try{ return !!javaObj.permiso_editar_gantt_varios }catch(e){ return true; }
     })
 
-    // ATCs (asesores) cuyas filas puede EDITAR el usuario. Comercial se organiza por ATC.
-    //   ['*']           => todos los ATC (usar con atcs_gantt_excluir para "los demás").
-    //   [271, 235]      => solo esos ATC (ej. Claudia: Francisco López 271, Alberto García 235).
-    // Ej. Jorge => atcs_gantt_editar ['*'] + atcs_gantt_excluir [271,235] (todos menos los de Claudia).
-    const atcs_gantt_editar = computed(() => {
-        try{
-            return javaObj.atcs_gantt_editar
-        }catch(e){
-            return ['*']; // dev: todos
-        }
-    })
-    const atcs_gantt_excluir = computed(() => {
-        try{
-            return javaObj.atcs_gantt_excluir
-        }catch(e){
-            return [];
-        }
-    })
+    // ¿Puede editar el Gantt (al menos un grupo)? Controla el botón/toggle Editar.
+    const permiso_editar_gantt_contratos = computed(() =>
+        permiso_editar_gantt_cfe.value || permiso_editar_gantt_pemex.value || permiso_editar_gantt_varios.value
+    )
 
     return {
         usuario,
         departamento,
         baseUrlAxios,
         permiso_editar_gantt_contratos,
-        atcs_gantt_editar,
-        atcs_gantt_excluir
+        permiso_editar_gantt_cfe,
+        permiso_editar_gantt_pemex,
+        permiso_editar_gantt_varios
     }
 };
