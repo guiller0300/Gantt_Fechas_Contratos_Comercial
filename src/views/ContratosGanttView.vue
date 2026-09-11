@@ -27,6 +27,22 @@ const puedeEditar = computed(() => permiso_editar_gantt_contratos.value && !esSn
 const editando = ref(false);
 const dialogImportar = ref(false);
 const mostrarInfo = ref(false); // muestra el detalle: Fallo (tentativo), Firma y Monto
+const mostrarHitos = ref(true); // muestra los hitos de facturación (fin) y cobro (fin + 30–45)
+
+// Hitos derivados de la fecha Fin (el backend los calcula y los manda por fila):
+//  - Facturación estimada = fin
+//  - Cobro estimado        = fin + 45 días (extremo de la ventana)
+// La banda tenue dibuja la ventana de cobro (fin+30 → fin+45).
+const hitosDef = [
+  { field: "fecha_facturacion_estim", color: "#f9a825", icon: "🧾", label: "Facturación estimada" },
+  { field: "fecha_cobro_estim", color: "#2e7d32", icon: "💰", label: "Cobro estimado" },
+];
+const bandDef = {
+  startField: "fecha_cobro_ini",
+  endField: "fecha_cobro_estim",
+  color: "#fff3e0",
+  label: "Ventana de cobro (30–45 días)",
+};
 
 const opcionesTipo = ["SERVICIOS", "BIENES", "GARANTIA"];
 const opcionesCategoria = [
@@ -140,8 +156,9 @@ onMounted(async () => {
       </q-toolbar-title>
     </q-toolbar>
 
-    <!-- Barra de filtros -->
-    <q-card-section class="q-py-sm">
+    <!-- Barra de controles -->
+    <q-card-section class="q-py-sm barra-controles">
+      <!-- Fila 1: filtros (izquierda) + acciones (derecha) -->
       <div class="row q-col-gutter-sm items-center">
         <div class="col-auto">
           <q-input
@@ -205,23 +222,8 @@ onMounted(async () => {
             <q-tooltip>Limpiar filtros</q-tooltip>
           </q-btn>
         </div>
-        <div class="col-auto">
-          <q-toggle v-model="mostrarInfo" icon="info" color="blue-grey-6" label="Detalle" left-label dense>
-            <q-tooltip>Mostrar u ocultar Fallo, Firma de contrato y Monto</q-tooltip>
-          </q-toggle>
-        </div>
 
         <q-space />
-
-        <!-- Leyenda de categorías -->
-        <div class="col-auto row items-center q-gutter-sm leyenda">
-          <span class="chip-leyenda" style="background:#5b7db1"></span>
-          <span class="text-caption">Contratado ({{ conteoPorCategoria.CONTRATADO }})</span>
-          <span class="chip-leyenda" style="background:#66bb6a"></span>
-          <span class="text-caption">Proyección ({{ conteoPorCategoria.PROYECCION }})</span>
-          <span class="chip-leyenda" style="background:#ef5350"></span>
-          <span class="text-caption">Garantía ({{ conteoPorCategoria.GARANTIA }})</span>
-        </div>
 
         <!-- Importar de proyecciones (solo con permiso) -->
         <div class="col-auto" v-if="puedeEditar">
@@ -250,6 +252,37 @@ onMounted(async () => {
           </q-chip>
         </div>
       </div>
+
+      <!-- Fila 2: opciones de vista (izquierda) + leyenda (derecha) -->
+      <div class="row items-center q-mt-sm q-gutter-x-md">
+        <div class="col-auto row items-center q-gutter-x-md">
+          <q-toggle v-model="mostrarInfo" icon="info" color="blue-grey-6" label="Detalle" left-label dense>
+            <q-tooltip>Mostrar u ocultar Fallo, Firma de contrato y Monto</q-tooltip>
+          </q-toggle>
+          <q-toggle v-model="mostrarHitos" icon="flag" color="amber-8" label="Facturación/Cobro" left-label dense>
+            <q-tooltip>Mostrar los hitos de facturación (fin) y cobro (fin + 30–45 días)</q-tooltip>
+          </q-toggle>
+        </div>
+
+        <q-space />
+
+        <!-- Leyenda -->
+        <div class="col-auto row items-center q-gutter-sm leyenda">
+          <span class="chip-leyenda" style="background:#5b7db1"></span>
+          <span class="text-caption">Contratado ({{ conteoPorCategoria.CONTRATADO }})</span>
+          <span class="chip-leyenda" style="background:#66bb6a"></span>
+          <span class="text-caption">Proyección ({{ conteoPorCategoria.PROYECCION }})</span>
+          <span class="chip-leyenda" style="background:#ef5350"></span>
+          <span class="text-caption">Garantía ({{ conteoPorCategoria.GARANTIA }})</span>
+          <template v-if="mostrarHitos">
+            <span class="sep-leyenda"></span>
+            <span class="rombo-leyenda" style="background:#f9a825"></span>
+            <span class="text-caption">🧾 Facturación (fin)</span>
+            <span class="rombo-leyenda" style="background:#2e7d32"></span>
+            <span class="text-caption">💰 Cobro (fin + 30–45 d)</span>
+          </template>
+        </div>
+      </div>
     </q-card-section>
 
     <!-- Aviso de snapshot (solo lectura) -->
@@ -274,6 +307,8 @@ onMounted(async () => {
         :groups="gruposDef"
         :columns="columnas"
         category-field="categoria"
+        :milestones="mostrarHitos ? hitosDef : []"
+        :band="mostrarHitos ? bandDef : null"
         :editable="editando"
         editable-field="_editable"
         persist-widths-key="contratos"
@@ -326,6 +361,21 @@ onMounted(async () => {
   width: 14px;
   height: 14px;
   border-radius: 3px;
+}
+.rombo-leyenda {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  transform: rotate(45deg);
+  border: 1px solid #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.sep-leyenda {
+  display: inline-block;
+  width: 1px;
+  height: 16px;
+  background: #cfd3dc;
+  margin: 0 4px;
 }
 .empty-state {
   display: flex;
