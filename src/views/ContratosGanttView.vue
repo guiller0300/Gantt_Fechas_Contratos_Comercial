@@ -151,6 +151,12 @@ onMounted(async () => {
     $q.loading.hide();
   }
 });
+
+const regresarComercial = () => {
+  const isDev = window.javaObj?.springActiveProfile === 'dev'
+  const baseUrl = isDev ? 'http://localhost:8282' : 'http://192.168.100.18:8282'
+  window.top.location.href = `${baseUrl}/comercial/index`
+}
 </script>
 
 <template>
@@ -161,6 +167,16 @@ onMounted(async () => {
       <q-toolbar-title>
         <span class="text-weight-bold">Gantt de Fechas de Contratos</span>
       </q-toolbar-title>
+      <q-btn
+          @click="regresarComercial"
+          flat
+          round
+          size="sm"
+          icon="logout"
+          class="back-btn"
+        >
+          <q-tooltip>Regresar</q-tooltip>
+        </q-btn>
     </q-toolbar>
 
     <!-- Barra de controles -->
