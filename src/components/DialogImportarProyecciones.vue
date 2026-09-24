@@ -15,7 +15,8 @@ const { consultarImportables, importarProyecciones, buscarOrdenes, agregarOrdene
 
 const busqueda = ref("");
 const grupo = ref("Servicios");
-const modo = ref("pedido"); // 'pedido' | 'proyecto' (solo para proyecciones)
+const modo = ref("pedido"); // 'pedido' | 'proyecto' (proyecciones)
+const modoOt = ref("pedido"); // 'pedido' | 'ot' (OTs adicionales)
 const otsAdicionales = ref(false); // check: buscar en el catálogo completo de OTs
 const filtroAnioOt = ref(null); // filtro de año dentro del catálogo de OTs (null = todos)
 const seleccion = ref(new Set());
@@ -24,6 +25,10 @@ const agregando = ref(false);
 const opcionesGrupo = ["Bienes", "Servicios", "Bienes y servicios"];
 const opcionesModo = [
   { label: "Por proyecto", value: "proyecto" },
+  { label: "Por pedido", value: "pedido" },
+];
+const opcionesModoOt = [
+  { label: "Por OT", value: "ot" },
   { label: "Por pedido", value: "pedido" },
 ];
 
@@ -42,6 +47,7 @@ const columnasOts = [
   { name: "numero_orden", label: "OT", field: "numero_orden", align: "left" },
   { name: "cliente", label: "Cliente", field: "cliente", align: "left" },
   { name: "descripcion", label: "Descripción", field: "descripcion", align: "left" },
+  { name: "pedidos", label: "Pedidos (contratos)", field: "pedidos", align: "left" },
   { name: "anio", label: "Año", field: "anio", align: "center" },
   { name: "tipo", label: "Tipo", field: "tipo", align: "center" },
   { name: "estado", label: "", field: "ya_importado", align: "center" },
@@ -66,7 +72,8 @@ const filasMostradas = computed(() => {
         (!q ||
           (o.numero_orden || "").toLowerCase().includes(q) ||
           (o.cliente || "").toLowerCase().includes(q) ||
-          (o.descripcion || "").toLowerCase().includes(q))
+          (o.descripcion || "").toLowerCase().includes(q) ||
+          (o.pedidos || []).some((p) => (p.numero || "").toLowerCase().includes(q)))
     );
   }
   const q = (busqueda.value || "").toLowerCase().trim();
@@ -84,7 +91,12 @@ const filasMostradas = computed(() => {
 });
 
 const cargando = computed(() => (fuente.value === "ots" ? loadingOrdenes.value : loadingImport.value));
-const seleccionables = computed(() => filasMostradas.value.filter((r) => !r.ya_importado));
+// OT "Ya está": por OT se bloquea (duplicaría la fila manual); por pedido se permite, porque el
+// backend adopta la fila existente de esa OT y le liga el pedido.
+const otBloqueada = (row) => row.ya_importado && modoOt.value === "ot";
+const seleccionables = computed(() =>
+  filasMostradas.value.filter((r) => (fuente.value === "ots" ? !otBloqueada(r) : !r.ya_importado))
+);
 const totalSeleccionados = computed(() => seleccion.value.size);
 
 // Al abrir
@@ -112,6 +124,13 @@ watch(otsAdicionales, (on) => {
   }
 });
 
+// Al pasar a "Por OT" se quitan de la selección las OTs que ya están (quedan bloqueadas).
+watch(modoOt, () => {
+  if (fuente.value !== "ots") return;
+  const bloqueadas = new Set(ordenesEncontradas.value.filter(otBloqueada).map(keyOf));
+  seleccion.value = new Set([...seleccion.value].filter((k) => !bloqueadas.has(k)));
+});
+
 function toggle(row) {
   // Las filas "Ya está" también pueden reimportarse: el backend reactiva y refresca su OT
   // sin duplicar (dedup por pedido/proyección). Útil para reparar OTs que faltaban.
@@ -134,7 +153,7 @@ async function importar() {
   agregando.value = true;
   try {
     if (fuente.value === "ots") {
-      const n = await agregarOrdenes(elegidos, grupo.value);
+      const n = await agregarOrdenes(elegidos, grupo.value, modoOt.value);
       emit("update:modelValue", false);
       if (n > 0) {
         Swal.fire({
@@ -184,6 +203,12 @@ async function importar() {
             />
           </div>
           <div class="col-auto" v-if="otsAdicionales">
+            <q-btn-toggle
+              v-model="modoOt" :options="opcionesModoOt"
+              no-caps dense unelevated toggle-color="primary" color="grey-3" text-color="grey-8"
+            />
+          </div>
+          <div class="col-auto" v-if="otsAdicionales">
             <q-select
               v-model="filtroAnioOt" :options="aniosOt"
               label="Año OT" outlined dense clearable style="min-width: 120px"
@@ -201,7 +226,10 @@ async function importar() {
         <div class="row items-center justify-between q-mt-xs">
           <div class="text-caption text-grey-7">
             <template v-if="otsAdicionales">
-              Catálogo completo de OTs. Al agregar, recuerda ligarla también a Proyecciones.
+              {{ modoOt === 'pedido'
+                ? 'Por pedido: una fila por cada pedido de la OT (como en la consulta general de la orden).'
+                : 'Por OT: una sola fila por OT.' }}
+              Recuerda ligarla también a Proyecciones.
             </template>
             <template v-else>
               {{ modo === 'pedido'
@@ -267,7 +295,7 @@ async function importar() {
               <div class="row items-center no-wrap">
                 <q-checkbox
                   :model-value="seleccion.has(keyOf(props.row))"
-                  :disable="props.row.ya_importado"
+                  :disable="otBloqueada(props.row)"
                   @update:model-value="toggle(props.row)"
                   dense class="q-mr-sm"
                 />

@@ -12,13 +12,15 @@ export default defineConfig({
     vueDevTools(),
   ],
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
-    },
+    alias: [
+      { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+      // Apunta la librería a su CÓDIGO FUENTE (no al dist): así los cambios en
+      // tmq-vue-gantt/src se reflejan en local con HMR, sin reconstruir el dist.
+      // El `$` (match exacto) evita capturar el subpath '@turbomaquinas/vue-gantt/style.css'.
+      { find: /^@turbomaquinas\/vue-gantt$/, replacement: fileURLToPath(new URL('../tmq-vue-gantt/src/index.js', import.meta.url)) },
+    ],
   },
-  // La librería local @turbomaquinas/vue-gantt está enlazada (symlink) vía "file:".
-  // Excluirla del pre-bundling hace que cada rebuild de su dist se refleje con solo
-  // recargar la página (sin tener que reiniciar el dev server con --force).
+  // La librería local ya no se pre-empaqueta (se consume desde fuente).
   optimizeDeps: {
     exclude: ['@turbomaquinas/vue-gantt'],
   },

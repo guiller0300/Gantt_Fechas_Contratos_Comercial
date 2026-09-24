@@ -14,7 +14,7 @@ const { permiso_editar_gantt_contratos } = useGetConfiguracion();
 const store = useGanttContratosStore();
 const {
   filasFiltradas, loading, conteoPorCategoria,
-  filtroGrupo, filtroCategoria, filtroAtc, atcsDisponibles,
+  filtroGrupo, filtroCategoria, filtroAtc, atcsDisponibles, filtroGiro, girosDisponibles,
   fechaReporte, esSnapshot,
 } = storeToRefs(store);
 const {
@@ -29,20 +29,31 @@ const dialogImportar = ref(false);
 const mostrarInfo = ref(false); // muestra el detalle: Fallo (tentativo), Firma y Monto
 const mostrarHitos = ref(true); // muestra los hitos de facturación (fin) y cobro (fin + 30–45)
 
-// Hitos derivados de la fecha Fin (el backend los calcula y los manda por fila):
-//  - Facturación estimada = fin
-//  - Cobro estimado        = fin + 45 días (extremo de la ventana)
-// La banda tenue dibuja la ventana de cobro (fin+30 → fin+45).
+// Hitos anclados al crédito del cliente (el backend los calcula y los manda por fila):
+//  - Facturación (editable/arrastrable): default 0-crédito=fin−7, con crédito=fin. Guarda `fecha_facturacion`.
+//  - Aceptación = factura + 15 (inicio de la banda de crédito).
+//  - Cobro      = factura + 15 + dias_credito (fin de la banda).
+// La banda tenue dibuja la ventana de crédito (aceptación → cobro).
 const hitosDef = [
-  { field: "fecha_facturacion_estim", color: "#f9a825", icon: "🧾", label: "Facturación estimada" },
-  { field: "fecha_cobro_estim", color: "#2e7d32", icon: "💰", label: "Cobro estimado" },
+  {
+    field: "fecha_facturacion_estim", color: "#f9a825", icon: "🧾", label: "Facturación",
+    draggable: true, persistField: "fecha_facturacion", // arrastrar guarda esta columna; el resto se recalcula
+  },
+  { field: "fecha_cobro_estim", color: "#2e7d32", icon: "💰", label: "Cobro" },
 ];
 const bandDef = {
   startField: "fecha_cobro_ini",
   endField: "fecha_cobro_estim",
-  color: "#fff3e0",
-  label: "Ventana de cobro (30–45 días)",
+  color: "#e8f5e9",
+  label: "Ventana de cobro (crédito del cliente)",
 };
+
+// Arrastre del rombo de facturación: persiste la fecha (campo) y, de forma optimista, mueve
+// también el derivado que dibuja el rombo (fecha_facturacion_estim) para que se quede donde
+// lo sueltas al instante; el backend devuelve luego cobro/aceptación recalculados.
+function onMilestoneChange(row, campo, nuevaFecha) {
+  actualizarFila(row.id, { [campo]: nuevaFecha, fecha_facturacion_estim: nuevaFecha });
+}
 
 const opcionesCategoria = [
   { label: "Contratado", value: "CONTRATADO" },
@@ -58,9 +69,32 @@ const gruposDef = [
 ];
 const opcionesGrupo = gruposDef.map((g) => g.key);
 
+// Tipos y colores de tramo (fechas de campo). BIENES/SERVICIOS definen la barra en la calle "Bienes y servicios".
+const segmentTypeOptions = ["CAMPO", "BIENES", "SERVICIOS"];
+const segmentColors = { CAMPO: "#1565c0", BIENES: "#8e6bb1", SERVICIOS: "#2e7d32" };
+// Descripciones sugeridas (un clic); el campo sigue aceptando texto libre.
+const segmentLabelSuggestions = ["Días en campo", "Desmontaje", "Armado en campo", "Montaje", "Pruebas", "Traslado"];
+
 // Drag&drop entre calles: persiste el nuevo grupo. La clasificación es el grupo (sin 'tipo').
-function onRowGroupChange(row, nuevoGrupo) {
-  actualizarFila(row.id, { grupo: nuevoGrupo });
+// Al pasar a "Bienes y servicios" siembra los tramos BIENES/SERVICIOS (desglose) si faltan.
+async function onRowGroupChange(row, nuevoGrupo) {
+  await actualizarFila(row.id, { grupo: nuevoGrupo });
+  if (nuevoGrupo === "Bienes y servicios") await sembrarBienesServicios(row);
+}
+
+// Crea los tramos BIENES y SERVICIOS de una fila B&S si aún no existen (default: rango del contrato).
+async function sembrarBienesServicios(row) {
+  const tipos = new Set((row.tramos || []).map((t) => t.tipo_tramo));
+  for (const tipo of ["BIENES", "SERVICIOS"]) {
+    if (tipos.has(tipo)) continue;
+    await agregarTramo(row.id, {
+      tipo_tramo: tipo,
+      etiqueta: tipo === "BIENES" ? "Bienes" : "Servicios",
+      comienzo: row.comienzo || null,
+      fin: row.fin || null,
+      color: segmentColors[tipo],
+    });
+  }
 }
 
 // Columnas del Gantt (Tipo se omite: ya está implícito en el grupo)
@@ -105,8 +139,8 @@ function onUpdateRow(row, cambios) {
 function onTramoAdd(row, draft) {
   agregarTramo(row.id, draft);
 }
-function onTramoChange(row, tramo, { comienzo, fin }) {
-  actualizarTramo(row.id, tramo.id, { comienzo, fin });
+function onTramoChange(row, tramo, cambios) {
+  actualizarTramo(row.id, tramo.id, cambios);
 }
 function onTramoRemove(row, tramo) {
   eliminarTramo(row.id, tramo.id);
@@ -223,6 +257,16 @@ const regresarComercial = () => {
         </div>
         <div class="col-auto">
           <q-select
+            v-model="filtroGiro"
+            :options="girosDisponibles"
+            emit-value map-options
+            label="Giro" outlined dense clearable style="min-width: 180px"
+          >
+            <template v-slot:prepend><q-icon name="business" size="xs" /></template>
+          </q-select>
+        </div>
+        <div class="col-auto">
+          <q-select
             v-model="filtroGrupo"
             :options="opcionesGrupo"
             label="Grupo" outlined dense clearable style="min-width: 170px"
@@ -300,9 +344,9 @@ const regresarComercial = () => {
           <template v-if="mostrarHitos">
             <span class="sep-leyenda"></span>
             <span class="rombo-leyenda" style="background:#f9a825"></span>
-            <span class="text-caption">🧾 Facturación (fin)</span>
+            <span class="text-caption">🧾 Facturación</span>
             <span class="rombo-leyenda" style="background:#2e7d32"></span>
-            <span class="text-caption">💰 Cobro (fin + 30–45 d)</span>
+            <span class="text-caption">💰 Cobro (factura + crédito)</span>
           </template>
         </div>
       </div>
@@ -335,10 +379,17 @@ const regresarComercial = () => {
         :editable="editando"
         editable-field="_editable"
         :row-draggable="editando"
+        expandable
+        expand-default-field="_expandDefault"
+        :segment-type-options="segmentTypeOptions"
+        :segment-label-suggestions="segmentLabelSuggestions"
+        :segment-colors="segmentColors"
+        segment-default-type="CAMPO"
         persist-widths-key="contratos"
         :day-width="6"
         @update:row="onUpdateRow"
         @row-group-change="onRowGroupChange"
+        @milestone-change="onMilestoneChange"
         @tramo-add="onTramoAdd"
         @tramo-change="onTramoChange"
         @tramo-remove="onTramoRemove"

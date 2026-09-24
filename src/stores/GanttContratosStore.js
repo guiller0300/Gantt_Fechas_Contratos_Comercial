@@ -22,6 +22,7 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
   const filtroGrupo = ref(null); // Bienes | Servicios | Bienes y servicios (la calle)
   const filtroCategoria = ref(null); // CONTRATADO | PROYECCION | GARANTIA
   const filtroAtc = ref(null); // atc_id
+  const filtroGiro = ref(null); // giro_id (giro del cliente)
 
   // Reporte por fecha (snapshot). null = Gantt vivo; con fecha = solo lectura.
   const fechaReporte = ref(null);
@@ -42,6 +43,8 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
   // Marca cada fila con _editable (según su grupo comercial) y formatea el monto del pedido.
   const anotarEditable = (r) => {
     r._editable = puedeEditarGrupo(r.grupo_comercial);
+    // Las filas "Bienes y servicios" nacen expandidas (desglose bienes/servicios).
+    r._expandDefault = r.grupo === "Bienes y servicios";
     r.pedido_monto_fmt =
       r.pedido_monto != null && r.pedido_monto !== "" ? fmtMoneda.format(Number(r.pedido_monto)) : null;
     return r;
@@ -188,6 +191,17 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
 
   // ==================== IMPORTAR / MATCH DESDE PROYECCIONES ====================
 
+  // Aviso al terminar una importación: éxitos y, si hubo, las filas que el backend rechazó.
+  const avisarResultado = (ok, fallidas, verbo) => {
+    if (ok > 0) showNotification(`${ok} fila(s) ${verbo}`, "positive", "top-right", "check", 2500);
+    if (fallidas.length) {
+      showNotification(
+        `No se pudieron guardar ${fallidas.length}: ${fallidas.join("; ")}`,
+        "negative", "top-right", "error", 6000
+      );
+    }
+  };
+
   const importables = ref([]);
   const loadingImport = ref(false);
 
@@ -224,12 +238,14 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
       orden_visual: 0,
       creado_por: numeroUsuario(),
     });
+    const fallidas = [];
     const post = async (fila, etiqueta) => {
       try {
         await axios.post(BASE, fila);
         ok++;
       } catch (e) {
         console.error("Import falló:", etiqueta, e);
+        fallidas.push(etiqueta);
       }
     };
 
@@ -240,12 +256,13 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
     for (const cand of seleccion) {
       const pedidos = cand.pedidos || [];
       if (modo === "pedido" && pedidos.length) {
-        // Una fila por cada pedido (contrato). OT del propio pedido si la tiene;
-        // si no (ORDENES_id 0/null), hereda la OT ligada a la proyección.
+        // Una fila por cada pedido (contrato). OT del pedido (el backend la resuelve como la
+        // consulta general de la orden; si son varias llega solo el texto); si no tiene,
+        // hereda la OT ligada a la proyección.
         for (const p of pedidos) {
           const tieneOtPropia = p.ordenes_id && Number(p.ordenes_id) > 0;
-          const ordenes_id = tieneOtPropia ? p.ordenes_id : otProyId(cand);
-          const ot_numero = tieneOtPropia ? p.orden_numero : otProyTexto(cand);
+          const ordenes_id = tieneOtPropia ? p.ordenes_id : p.orden_numero ? null : otProyId(cand);
+          const ot_numero = p.orden_numero || otProyTexto(cand);
           await post(
             {
               ...base(cand),
@@ -265,10 +282,8 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
         await post({ ...base(cand), ordenes_id: otProyId(cand), ot_numero: otProyTexto(cand) }, cand.cliente);
       }
     }
-    if (ok > 0) {
-      showNotification(`${ok} fila(s) importada(s)`, "positive", "top-right", "check", 2500);
-      await consultarGantt(filtroAnio.value);
-    }
+    avisarResultado(ok, fallidas, "importada(s)");
+    await consultarGantt(filtroAnio.value);
     return ok;
   };
 
@@ -293,32 +308,67 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
     }
   };
 
-  /** Agrega OTs adicionales (del catálogo) como filas del Gantt. */
-  const agregarOrdenes = async (seleccion, grupo) => {
+  // OT de garantía: ordenes.tipo 'G' (o 'CG'), o número con sufijo G (ej. '019/24G').
+  const esOrdenGarantia = (o) => /G/i.test(o.tipo || "") || /G$/i.test(String(o.numero_orden || "").trim());
+
+  /**
+   * Agrega OTs adicionales (del catálogo) como filas del Gantt.
+   * @param {String} modo 'ot' (una fila por OT) | 'pedido' (una fila por cada pedido de la OT;
+   *   la OT sin pedidos entra como una sola fila). Por pedido, el backend adopta la fila "solo OT"
+   *   que ya existiera de esa OT en lugar de duplicarla.
+   */
+  const agregarOrdenes = async (seleccion, grupo, modo = "ot") => {
     let ok = 0;
+    const fallidas = [];
+    const post = async (fila, etiqueta) => {
+      try {
+        await axios.post(BASE, fila);
+        ok++;
+      } catch (e) {
+        console.error("Agregar OT falló:", etiqueta, e);
+        fallidas.push(etiqueta);
+      }
+    };
+    const pedidosHechos = new Set(); // varias OTs del mismo contrato => una sola fila
     for (const o of seleccion) {
-      const fila = {
+      const base = {
         anio: filtroAnio.value,
         grupo,
         clientes_unidad_id: null,
         etiqueta_manual: o.cliente,
         ordenes_id: o.ordenes_id,
         ot_numero: o.numero_orden,
-        categoria: "CONTRATADO",
+        categoria: esOrdenGarantia(o) ? "GARANTIA" : "CONTRATADO",
         orden_visual: 0,
         creado_por: numeroUsuario(),
       };
-      try {
-        await axios.post(BASE, fila);
-        ok++;
-      } catch (e) {
-        console.error("Agregar OT falló:", o.numero_orden, e);
+      const pedidos = o.pedidos || [];
+      if (modo === "pedido" && pedidos.length) {
+        for (const p of pedidos) {
+          if (pedidosHechos.has(p.id)) continue;
+          pedidosHechos.add(p.id);
+          await post(
+            {
+              ...base,
+              pedidos_id: p.id,
+              // Todas las OTs del contrato (el backend las resuelve como la consulta general de la
+              // orden): una sola => su id; varias => solo el texto '045/25, 050/25, ...'.
+              ordenes_id: p.ordenes_id && Number(p.ordenes_id) > 0 ? p.ordenes_id : null,
+              ot_numero: p.orden_numero || o.numero_orden,
+              // Fechas mandatorias del pedido (fallo se deja tentativo/manual).
+              firma_contrato: p.firma_contrato || null,
+              comienzo: p.inicio_contrato || null,
+              fin: p.fin_contrato || null,
+            },
+            `${o.numero_orden} / pedido ${p.numero}`
+          );
+        }
+      } else {
+        await post(base, o.numero_orden);
       }
     }
-    if (ok > 0) {
-      showNotification(`${ok} OT(s) agregada(s)`, "positive", "top-right", "check", 2500);
-      await consultarGantt(filtroAnio.value);
-    }
+    avisarResultado(ok, fallidas, "agregada(s)");
+    await consultarGantt(filtroAnio.value);
     return ok;
   };
 
@@ -329,6 +379,7 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
       if (filtroGrupo.value && f.grupo !== filtroGrupo.value) return false;
       if (filtroCategoria.value && f.categoria !== filtroCategoria.value) return false;
       if (filtroAtc.value && f.atc_id !== filtroAtc.value) return false;
+      if (filtroGiro.value && f.giro_id !== filtroGiro.value) return false;
       return true;
     })
   );
@@ -339,6 +390,17 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
     for (const f of filas.value) {
       if (f.atc_id != null && !mapa.has(f.atc_id)) {
         mapa.set(f.atc_id, { value: f.atc_id, label: f.atc_nombre || `ATC ${f.atc_id}` });
+      }
+    }
+    return [...mapa.values()].sort((a, b) => a.label.localeCompare(b.label));
+  });
+
+  // Giros presentes en los datos (para el filtro): [{ value: giro_id, label: giro_descripcion }].
+  const girosDisponibles = computed(() => {
+    const mapa = new Map();
+    for (const f of filas.value) {
+      if (f.giro_id != null && !mapa.has(f.giro_id)) {
+        mapa.set(f.giro_id, { value: f.giro_id, label: f.giro_descripcion || `Giro ${f.giro_numero ?? f.giro_id}` });
       }
     }
     return [...mapa.values()].sort((a, b) => a.label.localeCompare(b.label));
@@ -356,6 +418,7 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
     filtroGrupo.value = null;
     filtroCategoria.value = null;
     filtroAtc.value = null;
+    filtroGiro.value = null;
   };
 
   return {
@@ -368,11 +431,13 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
     filtroGrupo,
     filtroCategoria,
     filtroAtc,
+    filtroGiro,
     fechaReporte,
     esSnapshot,
     // computados
     filasFiltradas,
     atcsDisponibles,
+    girosDisponibles,
     total,
     conteoPorCategoria,
     // importar
