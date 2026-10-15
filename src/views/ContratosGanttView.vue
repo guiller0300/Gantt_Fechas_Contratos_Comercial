@@ -25,6 +25,7 @@ const {
 // Modo edición: solo con permiso (Jorge) Y en el Gantt vivo (nunca sobre un snapshot histórico).
 const puedeEditar = computed(() => permiso_editar_gantt_contratos.value && !esSnapshot.value);
 const editando = ref(false);
+const ganttRef = ref(null); // para "Hoy" en la leyenda (centra la línea de tiempo en hoy)
 const dialogImportar = ref(false);
 const mostrarInfo = ref(false); // muestra el detalle: Fallo (tentativo), Firma y Monto
 const mostrarHitos = ref(true); // muestra los hitos de facturación (fin) y cobro (fin + 30–45)
@@ -348,6 +349,11 @@ const regresarComercial = () => {
             <span class="rombo-leyenda" style="background:#2e7d32"></span>
             <span class="text-caption">💰 Cobro (factura + crédito)</span>
           </template>
+          <span class="sep-leyenda"></span>
+          <span class="ir-hoy" title="Ir al día de hoy en el Gantt" @click="ganttRef?.irAHoy()">
+            <span class="hoy-leyenda"></span>
+            <span class="text-caption">Hoy</span>
+          </span>
         </div>
       </div>
     </q-card-section>
@@ -369,6 +375,7 @@ const regresarComercial = () => {
 
       <TmqGantt
         v-else
+        ref="ganttRef"
         :rows="filasFiltradas"
         group-by="grupo"
         :groups="gruposDef"
@@ -445,6 +452,24 @@ const regresarComercial = () => {
   transform: rotate(45deg);
   border: 1px solid #fff;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.ir-hoy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0 3px;
+}
+.ir-hoy:hover {
+  background: #ffebee;
+}
+.hoy-leyenda {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  background: #e53935;
+  vertical-align: middle;
 }
 .sep-leyenda {
   display: inline-block;
