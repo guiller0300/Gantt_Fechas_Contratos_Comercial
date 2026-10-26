@@ -111,6 +111,26 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
     return fechaReporte.value ? consultarAsOf(fechaReporte.value) : consultarGantt(filtroAnio.value);
   };
 
+  /**
+   * Trae del ERP los últimos cambios (contratos, OTs, proyecciones) a las filas activas del año
+   * y recarga. Devuelve el resumen del backend { actualizadas, nuevas, ocultas, detalle[], errores[] }
+   * o null si falló.
+   */
+  const sincronizarConErp = async () => {
+    try {
+      const { data } = await axios.post(`${BASE}/sincronizar/anio/${filtroAnio.value}`, null, {
+        params: { modificado_por: numeroUsuario() },
+      });
+      return data;
+    } catch (e) {
+      console.error("Sincronizar falló:", e);
+      showNotification("No se pudieron traer los cambios del ERP", "negative", "top-right", "error", 4000);
+      return null;
+    } finally {
+      await consultarGantt(filtroAnio.value);
+    }
+  };
+
   // ==================== EDICIÓN DE FILAS ====================
 
   /** PATCH de una fila (edición inline o drag de barra). */
@@ -455,6 +475,7 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
     consultarGantt,
     consultarAsOf,
     refrescarTablero,
+    sincronizarConErp,
     actualizarFila,
     eliminarFila,
     agregarTramo,

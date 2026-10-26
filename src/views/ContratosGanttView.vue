@@ -19,13 +19,63 @@ const {
 } = storeToRefs(store);
 const {
   consultarAnios, consultarGantt, refrescarTablero, actualizarFila, eliminarFila,
-  agregarTramo, actualizarTramo, eliminarTramo, limpiarFiltros,
+  agregarTramo, actualizarTramo, eliminarTramo, limpiarFiltros, sincronizarConErp,
 } = store;
 
 // Modo edición: solo con permiso (Jorge) Y en el Gantt vivo (nunca sobre un snapshot histórico).
 const puedeEditar = computed(() => permiso_editar_gantt_contratos.value && !esSnapshot.value);
 const editando = ref(false);
 const ganttRef = ref(null); // para "Hoy" en la leyenda (centra la línea de tiempo en hoy)
+const sincronizando = ref(false);
+
+// Botón "Actualizar". Con permiso: trae del ERP los cambios de contratos/OTs/proyecciones a las
+// filas (lo mismo que reimportar, para todo el año) y muestra qué cambió. Sin permiso: recarga.
+const escHtml = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+async function onActualizar() {
+  if (!puedeEditar.value) {
+    sincronizando.value = true;
+    try { await refrescarTablero(); } finally { sincronizando.value = false; }
+    return;
+  }
+  const ok = await Swal.fire({
+    title: "¿Traer los últimos cambios del ERP?",
+    html:
+      "<div style='text-align:left;font-size:14px'>Se actualizan las filas del año con lo que haya cambiado:<ul style='margin:6px 0 0 18px'>" +
+      "<li>OTs y fechas de firma, inicio y fin de los <b>contratos</b> (solo si el pedido las trae; no borra lo capturado).</li>" +
+      "<li><b>Proyecciones</b> que ya tienen contrato pasan a ser la fila del pedido (conservan fechas y tramos).</li>" +
+      "<li>OTs agregadas sueltas que ya tienen contrato se <b>agrupan</b> en la fila del contrato.</li>" +
+      "<li>Proyección ganada → Contratado.</li></ul></div>",
+    icon: "question",
+    showCancelButton: true,
+    confirmButtonText: "Actualizar",
+    cancelButtonText: "Cancelar",
+    confirmButtonColor: "#027be3",
+  });
+  if (!ok.isConfirmed) return;
+  sincronizando.value = true;
+  try {
+    const r = await sincronizarConErp();
+    if (!r) return;
+    const detalle = r.detalle || [];
+    const errores = r.errores || [];
+    const lista = (items) =>
+      `<ul style='margin:4px 0 0 18px;max-height:220px;overflow:auto'>${items.map((d) => `<li>${escHtml(d)}</li>`).join("")}</ul>`;
+    Swal.fire({
+      icon: errores.length ? "warning" : "success",
+      title: detalle.length || r.nuevas || r.ocultas ? "Gantt actualizado" : "Todo estaba al día",
+      html:
+        "<div style='text-align:left;font-size:13px'>" +
+        `<b>${r.actualizadas || 0}</b> fila(s) con cambios · <b>${r.nuevas || 0}</b> nueva(s) · <b>${r.ocultas || 0}</b> agrupada(s)/oculta(s)` +
+        (detalle.length ? lista(detalle) : "") +
+        (errores.length ? `<div style='margin-top:8px;color:#c62828'><b>No se pudieron actualizar:</b></div>${lista(errores)}` : "") +
+        "</div>",
+      width: 640,
+      confirmButtonColor: "#027be3",
+    });
+  } finally {
+    sincronizando.value = false;
+  }
+}
 const dialogImportar = ref(false);
 const mostrarInfo = ref(false); // muestra el detalle: Fallo (tentativo), Firma y Monto
 const mostrarHitos = ref(true); // muestra los hitos de facturación (fin) y cobro (fin + 30–45)
@@ -216,18 +266,17 @@ const regresarComercial = () => {
 
     <!-- Barra de controles -->
     <q-card-section class="q-py-sm barra-controles">
-      <!-- Fila 1: filtros (izquierda) + acciones (derecha) -->
-      <div class="row q-col-gutter-sm items-center">
-        <div class="col-auto">
+      <!-- Fila 1: filtros (izquierda) + acciones (derecha; si no caben, bajan pero siguen a la derecha) -->
+      <div class="barra-fila">
+        <div class="barra-filtros">
           <q-input
             :model-value="fechaReporte"
             @update:model-value="onFechaReporte"
-            label="Fecha del reporte" outlined dense clearable
+            label="Fecha reporte" outlined dense clearable
             mask="####-##-##" placeholder="AAAA-MM-DD"
-            style="min-width: 180px"
+            style="width: 160px"
             :bg-color="esSnapshot ? 'amber-1' : undefined"
           >
-            <template v-slot:prepend><q-icon name="history" size="xs" /></template>
             <template v-slot:append>
               <q-icon name="event" class="cursor-pointer">
                 <q-popup-proxy cover transition-show="scale" transition-hide="scale">
@@ -245,76 +294,78 @@ const regresarComercial = () => {
             </template>
             <q-tooltip>Elige una fecha para ver el Gantt como estaba ese día (solo lectura)</q-tooltip>
           </q-input>
-        </div>
-        <div class="col-auto">
           <q-select
             v-model="filtroAtc"
             :options="atcsDisponibles"
             emit-value map-options
-            label="ATC" outlined dense clearable style="min-width: 200px"
+            label="ATC" outlined dense clearable style="width: 160px"
           >
             <template v-slot:prepend><q-icon name="badge" size="xs" /></template>
           </q-select>
-        </div>
-        <div class="col-auto">
           <q-select
             v-model="filtroGiro"
             :options="girosDisponibles"
             emit-value map-options
-            label="Giro" outlined dense clearable style="min-width: 180px"
+            label="Giro" outlined dense clearable style="width: 150px"
           >
             <template v-slot:prepend><q-icon name="business" size="xs" /></template>
           </q-select>
-        </div>
-        <div class="col-auto">
           <q-select
             v-model="filtroGrupo"
             :options="opcionesGrupo"
-            label="Grupo" outlined dense clearable style="min-width: 170px"
+            label="Grupo" outlined dense clearable style="width: 150px"
           >
             <template v-slot:prepend><q-icon name="view_stream" size="xs" /></template>
           </q-select>
-        </div>
-        <div class="col-auto">
           <q-select
             v-model="filtroCategoria"
             :options="opcionesCategoria"
             emit-value map-options
-            label="Categoría" outlined dense clearable style="min-width: 160px"
+            label="Categoría" outlined dense clearable style="width: 145px"
           >
             <template v-slot:prepend><q-icon name="label" size="xs" /></template>
           </q-select>
-        </div>
-        <div class="col-auto">
-          <q-btn flat dense color="grey-7" icon="filter_alt_off" @click="limpiarFiltros">
+          <q-btn flat round dense color="grey-7" icon="filter_alt_off" @click="limpiarFiltros">
             <q-tooltip>Limpiar filtros</q-tooltip>
           </q-btn>
         </div>
 
-        <q-space />
-
-        <!-- Importar de proyecciones (solo con permiso) -->
-        <div class="col-auto" v-if="puedeEditar">
+        <div class="barra-acciones">
+          <!-- Actualizar: con permiso trae los cambios del ERP (sincroniza); sin permiso solo recarga -->
           <q-btn
-            color="primary" outline no-caps icon="cloud_download"
-            label="Importar de Proyecciones"
+            v-if="!esSnapshot"
+            color="primary" flat no-caps padding="8px 10px" icon="sync" label="Actualizar"
+            :loading="sincronizando"
+            @click="onActualizar"
+          >
+            <q-tooltip>
+              {{ puedeEditar
+                ? "Traer los últimos cambios de contratos, OTs y proyecciones del ERP"
+                : "Recargar el Gantt" }}
+            </q-tooltip>
+          </q-btn>
+          <!-- Importar de proyecciones (solo con permiso) -->
+          <q-btn
+            v-if="puedeEditar"
+            color="primary" outline no-caps padding="8px 10px" icon="cloud_download"
+            label="Importar"
             @click="dialogImportar = true"
           >
-            <q-tooltip>Traer proyecciones del año con sus OT ligadas</q-tooltip>
+            <q-tooltip>Importar de Proyecciones: traer proyecciones del año (o OTs del catálogo) con sus pedidos</q-tooltip>
           </q-btn>
-        </div>
-        <!-- Toggle edición (solo con permiso) -->
-        <div class="col-auto">
-          <q-toggle
+          <!-- Modo edición (solo con permiso): botón que se prende/apaga -->
+          <q-btn
             v-if="puedeEditar"
-            v-model="editando"
+            no-caps padding="8px 10px"
             icon="edit"
-            color="light-green-7"
-            label="Editar"
-            left-label
+            :label="editando ? 'Editando' : 'Editar'"
+            :color="editando ? 'light-green-7' : 'grey-7'"
+            :outline="!editando"
+            :unelevated="editando"
+            @click="editando = !editando"
           >
-            <q-tooltip>Habilitar edición de fechas y arrastre de barras</q-tooltip>
-          </q-toggle>
+            <q-tooltip>{{ editando ? "Terminar edición" : "Habilitar edición de fechas y arrastre de barras" }}</q-tooltip>
+          </q-btn>
           <q-chip v-else dense icon="lock" color="grey-3" text-color="grey-8">
             Solo lectura
           </q-chip>
@@ -322,37 +373,30 @@ const regresarComercial = () => {
       </div>
 
       <!-- Fila 2: opciones de vista (izquierda) + leyenda (derecha) -->
-      <div class="row items-center q-mt-sm q-gutter-x-md">
-        <div class="col-auto row items-center q-gutter-x-md">
-          <q-toggle v-model="mostrarInfo" icon="info" color="blue-grey-6" label="Detalle" left-label dense>
+      <div class="barra-fila barra-fila--vista">
+        <div class="barra-opciones">
+          <span class="text-caption text-grey-7">Mostrar:</span>
+          <q-toggle v-model="mostrarInfo" color="blue-grey-6" label="Detalle" dense size="sm">
             <q-tooltip>Mostrar u ocultar Fallo, Firma de contrato y Monto</q-tooltip>
           </q-toggle>
-          <q-toggle v-model="mostrarHitos" icon="flag" color="amber-8" label="Facturación/Cobro" left-label dense>
-            <q-tooltip>Mostrar los hitos de facturación (fin) y cobro (fin + 30–45 días)</q-tooltip>
+          <q-toggle v-model="mostrarHitos" color="amber-8" label="Facturación/Cobro" dense size="sm">
+            <q-tooltip>Mostrar los hitos de facturación y cobro</q-tooltip>
           </q-toggle>
         </div>
 
-        <q-space />
-
-        <!-- Leyenda -->
-        <div class="col-auto row items-center q-gutter-sm leyenda">
-          <span class="chip-leyenda" style="background:#5b7db1"></span>
-          <span class="text-caption">Contratado ({{ conteoPorCategoria.CONTRATADO }})</span>
-          <span class="chip-leyenda" style="background:#66bb6a"></span>
-          <span class="text-caption">Proyección ({{ conteoPorCategoria.PROYECCION }})</span>
-          <span class="chip-leyenda" style="background:#ef5350"></span>
-          <span class="text-caption">Garantía ({{ conteoPorCategoria.GARANTIA }})</span>
+        <!-- Leyenda: cada elemento (marca + texto) es una pieza que no se parte al acomodarse -->
+        <div class="leyenda">
+          <span class="ley-item"><span class="chip-leyenda" style="background:#5b7db1"></span>Contratado ({{ conteoPorCategoria.CONTRATADO }})</span>
+          <span class="ley-item"><span class="chip-leyenda" style="background:#66bb6a"></span>Proyección ({{ conteoPorCategoria.PROYECCION }})</span>
+          <span class="ley-item"><span class="chip-leyenda" style="background:#ef5350"></span>Garantía ({{ conteoPorCategoria.GARANTIA }})</span>
           <template v-if="mostrarHitos">
             <span class="sep-leyenda"></span>
-            <span class="rombo-leyenda" style="background:#f9a825"></span>
-            <span class="text-caption">🧾 Facturación</span>
-            <span class="rombo-leyenda" style="background:#2e7d32"></span>
-            <span class="text-caption">💰 Cobro (factura + crédito)</span>
+            <span class="ley-item"><span class="rombo-leyenda" style="background:#f9a825"></span>Facturación</span>
+            <span class="ley-item"><span class="rombo-leyenda" style="background:#2e7d32"></span>Cobro (factura + crédito)</span>
           </template>
           <span class="sep-leyenda"></span>
-          <span class="ir-hoy" title="Ir al día de hoy en el Gantt" @click="ganttRef?.irAHoy()">
-            <span class="hoy-leyenda"></span>
-            <span class="text-caption">Hoy</span>
+          <span class="ley-item ir-hoy" title="Ir al día de hoy en el Gantt" @click="ganttRef?.irAHoy()">
+            <span class="hoy-leyenda"></span>Hoy
           </span>
         </div>
       </div>
@@ -438,28 +482,68 @@ const regresarComercial = () => {
   color: #8a6d00;
   font-size: 13px;
 }
-.leyenda { flex-wrap: wrap; }
+/* Barra de controles: flexbox simple (sin gutters anidados de Quasar) */
+.barra-fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.barra-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.barra-acciones {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto; /* siempre a la derecha, aunque baje de renglón */
+}
+.barra-fila--vista {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid #eceff3;
+}
+.barra-opciones {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.leyenda {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-left: auto;
+  font-size: 12px;
+  color: #4a5060;
+}
+.ley-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
 .chip-leyenda {
   display: inline-block;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   border-radius: 3px;
 }
 .rombo-leyenda {
   display: inline-block;
-  width: 11px;
-  height: 11px;
+  width: 10px;
+  height: 10px;
   transform: rotate(45deg);
   border: 1px solid #fff;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 .ir-hoy {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   cursor: pointer;
   border-radius: 3px;
-  padding: 0 3px;
+  padding: 1px 4px;
 }
 .ir-hoy:hover {
   background: #ffebee;
@@ -474,9 +558,8 @@ const regresarComercial = () => {
 .sep-leyenda {
   display: inline-block;
   width: 1px;
-  height: 16px;
+  height: 14px;
   background: #cfd3dc;
-  margin: 0 4px;
 }
 .empty-state {
   display: flex;
