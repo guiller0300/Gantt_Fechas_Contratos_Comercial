@@ -67,8 +67,15 @@ export const useGetConfiguracion = () => {
         permiso_editar_gantt_cfe.value || permiso_editar_gantt_pemex.value || permiso_editar_gantt_varios.value
     )
 
+    // Dashboard comercial/cobranza (información financiera). Lo inyecta el host desde un rol de
+    // Keycloak (p. ej. ro_co_dashboard_acceso). dev: permitido.
+    const permiso_dashboard_comercial = computed(() => {
+        try{ return !!javaObj.permiso_dashboard_comercial }catch(e){ return true; }
+    })
+
     return {
         usuario,
+        permiso_dashboard_comercial,
         departamento,
         baseUrlAxios,
         permiso_editar_gantt_contratos,

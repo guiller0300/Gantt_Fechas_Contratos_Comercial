@@ -1,11 +1,12 @@
 <script setup>
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, watch, nextTick } from "vue";
 import { storeToRefs } from "pinia";
 import { useQuasar } from "quasar";
 import { TmqGantt } from "@turbomaquinas/vue-gantt";
 import { useGanttContratosStore } from "@/stores/GanttContratosStore";
 import { useGetConfiguracion } from "@/composables/getConfiguracion";
 import DialogImportarProyecciones from "@/components/DialogImportarProyecciones.vue";
+import HitosFacturacion from "@/components/HitosFacturacion.vue";
 import Swal from "sweetalert2";
 
 const $q = useQuasar();
@@ -19,7 +20,7 @@ const {
 } = storeToRefs(store);
 const {
   consultarAnios, consultarGantt, refrescarTablero, actualizarFila, eliminarFila,
-  agregarTramo, actualizarTramo, eliminarTramo, limpiarFiltros, sincronizarConErp,
+  agregarTramo, actualizarTramo, eliminarTramo, limpiarFiltros, sincronizarConErp, actualizarHito,
 } = store;
 
 // Modo edición: solo con permiso (Jorge) Y en el Gantt vivo (nunca sobre un snapshot histórico).
@@ -76,6 +77,24 @@ async function onActualizar() {
     sincronizando.value = false;
   }
 }
+// Escala de la línea de tiempo: ancho en px de cada día. La librería cambia el encabezado sola:
+// Mes (≤ 3 px: años + meses), Semana (semanas) y Día (≥ 20 px: un día por columna, vista de Isela).
+const ESCALAS = { mes: 2, semana: 6, dia: 28 };
+const opcionesEscala = [
+  { label: "Mes", value: "mes" },
+  { label: "Semana", value: "semana" },
+  { label: "Día", value: "dia" },
+];
+const LS_ESCALA = "gantt-contratos:escala";
+const leerEscala = () => { try { return localStorage.getItem(LS_ESCALA); } catch { return null; } };
+const escala = ref(ESCALAS[leerEscala()] ? leerEscala() : "semana");
+const anchoDia = computed(() => ESCALAS[escala.value] || ESCALAS.semana);
+watch(escala, async (v) => {
+  try { localStorage.setItem(LS_ESCALA, v); } catch { /* sin almacenamiento: solo esta sesión */ }
+  await nextTick();
+  ganttRef.value?.irAHoy(); // al cambiar de escala, vuelve a centrar en hoy
+});
+
 const dialogImportar = ref(false);
 const mostrarInfo = ref(false); // muestra el detalle: Fallo (tentativo), Firma y Monto
 const mostrarHitos = ref(true); // muestra los hitos de facturación (fin) y cobro (fin + 30–45)
@@ -104,6 +123,13 @@ const bandDef = {
 // lo sueltas al instante; el backend devuelve luego cobro/aceptación recalculados.
 function onMilestoneChange(row, campo, nuevaFecha) {
   actualizarFila(row.id, { [campo]: nuevaFecha, fecha_facturacion_estim: nuevaFecha });
+}
+
+// Filas con hitos de facturación (estimaciones): la librería dibuja row._hitos / row._bandas en lugar
+// del hito único. Arrastrar el rombo de facturación de un hito guarda su nueva fecha programada
+// (su cobro y banda se recalculan en el backend). El rombo de cobro no se arrastra.
+function onHitoItemChange(row, item, nuevaFecha) {
+  if (item?.hito && item.key?.startsWith("f")) actualizarHito(row.id, item.hito.id, { fecha_programada: nuevaFecha });
 }
 
 const opcionesCategoria = [
@@ -382,6 +408,13 @@ const regresarComercial = () => {
           <q-toggle v-model="mostrarHitos" color="amber-8" label="Facturación/Cobro" dense size="sm">
             <q-tooltip>Mostrar los hitos de facturación y cobro</q-tooltip>
           </q-toggle>
+          <span class="sep-leyenda"></span>
+          <span class="text-caption text-grey-7">Escala:</span>
+          <q-btn-toggle
+            v-model="escala" :options="opcionesEscala"
+            dense no-caps unelevated size="sm" padding="2px 10px"
+            toggle-color="primary" color="grey-2" text-color="grey-8"
+          />
         </div>
 
         <!-- Leyenda: cada elemento (marca + texto) es una pieza que no se parte al acomodarse -->
@@ -427,6 +460,8 @@ const regresarComercial = () => {
         category-field="categoria"
         :milestones="mostrarHitos ? hitosDef : []"
         :band="mostrarHitos ? bandDef : null"
+        :milestone-items-field="mostrarHitos ? '_hitos' : null"
+        :band-items-field="mostrarHitos ? '_bandas' : null"
         :editable="editando"
         editable-field="_editable"
         :row-draggable="editando"
@@ -437,15 +472,23 @@ const regresarComercial = () => {
         :segment-colors="segmentColors"
         segment-default-type="CAMPO"
         persist-widths-key="contratos"
-        :day-width="6"
+        :day-width="anchoDia"
+        :daily-from="20"
+        :monthly-below="3"
         @update:row="onUpdateRow"
         @row-group-change="onRowGroupChange"
         @milestone-change="onMilestoneChange"
+        @milestone-item-change="onHitoItemChange"
         @tramo-add="onTramoAdd"
         @tramo-change="onTramoChange"
         @tramo-remove="onTramoRemove"
         @row-remove="onRowRemove"
-      />
+      >
+        <!-- En el desplegable de cada fila: hitos de facturación (estimaciones) -->
+        <template #detail="{ row, editable }">
+          <HitosFacturacion :row="row" :editable="editable && !esSnapshot" />
+        </template>
+      </TmqGantt>
     </div>
 
     <!-- Diálogo Importar/Match desde proyecciones (+ OTs adicionales) -->

@@ -47,7 +47,109 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
     r._expandDefault = r.grupo === "Bienes y servicios";
     r.pedido_monto_fmt =
       r.pedido_monto != null && r.pedido_monto !== "" ? fmtMoneda.format(Number(r.pedido_monto)) : null;
+    anotarHitos(r);
     return r;
+  };
+
+  // ==================== HITOS DE FACTURACIÓN (estimaciones) ====================
+
+  // Monto corto para la etiqueta del rombo: $60 M, $850 K, $1,200.
+  const montoCorto = (m) => {
+    const n = Number(m);
+    if (!m && m !== 0) return "";
+    if (Math.abs(n) >= 1e6) return `$${(n / 1e6).toLocaleString("es-MX", { maximumFractionDigits: 1 })} M`;
+    if (Math.abs(n) >= 1e3) return `$${Math.round(n / 1e3).toLocaleString("es-MX")} K`;
+    return fmtMoneda.format(n);
+  };
+  const TIPOS_HITO = { ANTICIPO: "Anticipo", ESTIMACION: "Estimación", FINIQUITO: "Finiquito", OTRO: "Otro" };
+
+  /**
+   * Convierte row.hitos (del backend) en lo que dibuja la librería: por cada hito un rombo de
+   * facturación (arrastrable, con su monto), un rombo de cobro y su banda de crédito, todos en el
+   * mismo `grupo` para que se muevan juntos al arrastrar. Sin hitos => [] y el Gantt usa el hito
+   * único de siempre (fecha_facturacion_estim).
+   */
+  function anotarHitos(r) {
+    const hitos = Array.isArray(r.hitos) ? r.hitos : [];
+    r._hitos = [];
+    r._bandas = [];
+    for (const h of hitos) {
+      const grupo = "h" + h.id;
+      const nombre = h.concepto || TIPOS_HITO[h.tipo] || "Hito";
+      const monto = h.monto != null ? fmtMoneda.format(Number(h.monto)) : "sin monto";
+      r._hitos.push({
+        key: "f" + h.id, grupo, hito: h, draggable: true,
+        fecha: h.fecha_programada, color: "#f9a825", icon: "🧾",
+        label: `${nombre} · ${monto}`, texto: montoCorto(h.monto),
+      });
+      if (h.fecha_cobro_estim) {
+        r._hitos.push({
+          key: "c" + h.id, grupo, hito: h,
+          fecha: h.fecha_cobro_estim, color: "#2e7d32", icon: "💰", label: `Cobro · ${nombre}`,
+        });
+      }
+      if (h.fecha_cobro_ini && h.fecha_cobro_estim) {
+        r._bandas.push({
+          key: "b" + h.id, grupo, inicio: h.fecha_cobro_ini, fin: h.fecha_cobro_estim,
+          color: "#e8f5e9", label: `Ventana de cobro · ${nombre}`,
+        });
+      }
+    }
+    return r;
+  }
+
+  // Reemplaza los hitos de la fila con la lista que regresa el backend (ya con su cobro).
+  const ponerHitos = (ganttId, lista) => {
+    const fila = filas.value.find((f) => f.id === ganttId);
+    if (fila) anotarHitos(Object.assign(fila, { hitos: Array.isArray(lista) ? lista : [] }));
+  };
+
+  const agregarHito = async (ganttId, hito) => {
+    try {
+      const { data } = await axios.post(`${BASE}/${ganttId}/hitos`, { ...hito, creado_por: numeroUsuario() });
+      ponerHitos(ganttId, data);
+      return true;
+    } catch (e) {
+      showNotification("No se pudo agregar el hito", "negative", "top-right", "error", 3000);
+      return false;
+    }
+  };
+
+  const actualizarHito = async (ganttId, hitoId, cambios) => {
+    // Optimista: mueve el hito al instante; el backend regresa la lista con el cobro recalculado.
+    const fila = filas.value.find((f) => f.id === ganttId);
+    const h = fila?.hitos?.find((x) => x.id === hitoId);
+    const previo = h ? { ...h } : null;
+    if (h) { Object.assign(h, cambios); anotarHitos(fila); }
+    try {
+      const { data } = await axios.patch(`${BASE}/hitos/${hitoId}`, { ...cambios, modificado_por: numeroUsuario() });
+      ponerHitos(ganttId, data);
+    } catch (e) {
+      if (h && previo) { Object.assign(h, previo); anotarHitos(fila); }
+      showNotification("No se pudo guardar el hito", "negative", "top-right", "error", 3000);
+    }
+  };
+
+  const eliminarHito = async (ganttId, hitoId) => {
+    try {
+      const { data } = await axios.delete(`${BASE}/hitos/${hitoId}`, { params: { modificado_por: numeroUsuario() } });
+      ponerHitos(ganttId, data);
+    } catch (e) {
+      showNotification("No se pudo quitar el hito", "negative", "top-right", "error", 3000);
+    }
+  };
+
+  /** Reemplaza TODOS los hitos de la fila (ej. "Parcializar"). */
+  const reemplazarHitos = async (ganttId, lista) => {
+    try {
+      const { data } = await axios.put(`${BASE}/${ganttId}/hitos`, lista, { params: { modificado_por: numeroUsuario() } });
+      ponerHitos(ganttId, data);
+      showNotification(`${(data || []).length} hito(s) de facturación guardado(s)`, "positive", "top-right", "check", 2500);
+      return true;
+    } catch (e) {
+      showNotification("No se pudieron guardar los hitos", "negative", "top-right", "error", 3000);
+      return false;
+    }
   };
 
   // ==================== CONSULTA ====================
@@ -476,6 +578,12 @@ export const useGanttContratosStore = defineStore("ganttContratos", () => {
     consultarAsOf,
     refrescarTablero,
     sincronizarConErp,
+    agregarHito,
+    actualizarHito,
+    eliminarHito,
+    reemplazarHitos,
+    montoCorto,
+    TIPOS_HITO,
     actualizarFila,
     eliminarFila,
     agregarTramo,
